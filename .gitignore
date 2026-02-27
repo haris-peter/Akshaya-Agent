@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -51,3 +52,25 @@ venv.bak/
 
 # Agent configuration
 .agents/
+=======
+# Build artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+env/
+
+# IDE configurations
+.vscode/
+.idea/
+
+# Environment variables
+.env
+.env.*
+
+# Logs and databases
+*.log
+*.sqlite
+>>>>>>> bc998640a48a6bf8f8321038c6f4c275edd2bbe0
