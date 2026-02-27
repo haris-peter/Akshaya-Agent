@@ -1,10 +1,9 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlmodel import SQLModel
+from app.db.models import Base
+from app.core.config import settings
 
-# We are using sqlite to bypass the IPv4 limitations on the Supabase free tier connection pooler.
-SQLLITE_URL = "sqlite+aiosqlite:///./saarthi_local.db"
-
-engine = create_async_engine(SQLLITE_URL, echo=False, future=True)
+# For async postgres connections we use asyncpg
+engine = create_async_engine(settings.DATABASE_URL, echo=True, future=True)
 
 # Generate an AsyncSession creator
 async_session = async_sessionmaker(
@@ -12,9 +11,9 @@ async_session = async_sessionmaker(
 )
 
 async def init_db():
-    """Initializes standard SQL tables based off SQLModel metadata."""
+    """Initializes standard SQL tables based off SQLAlchemy metadata."""
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await conn.run_sync(Base.metadata.create_all)
 
 async def get_session() -> AsyncSession:
     """Dependency injector for getting an active async transactional session."""

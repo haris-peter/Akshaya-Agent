@@ -2,7 +2,7 @@ from typing import Dict, Any
 from app.core.llm import get_llm
 from langchain_core.prompts import PromptTemplate
 
-def explanation_agent(state: Dict[str, Any]) -> Dict[str, Any]:
+async def explanation_agent(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Explanation Agent
     
@@ -31,7 +31,8 @@ def explanation_agent(state: Dict[str, Any]) -> Dict[str, Any]:
     prompt = PromptTemplate.from_template(template)
     chain = prompt | llm
     
-    explanation = chain.invoke({"reason": reason}).content
+    explanation_response = await chain.ainvoke({"reason": reason})
+    explanation = explanation_response.content
     
     # Store the explanation in the result
     state["eligibility_result"]["explanation"] = explanation

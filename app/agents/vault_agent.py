@@ -1,15 +1,9 @@
 from typing import Dict, Any
+from sqlalchemy.future import select
+from app.db.session import async_session
+from app.db.models import DocumentVault
 
-# Mock check - in a real app query DocumentVault
-def check_document_vault(citizen_id: str, document_type: str) -> bool:
-    """Mock checking if a citizen has a valid document of the required type."""
-    # Assume citizen 123 has income_certificate but not caste_certificate
-    mock_vault = {
-        "123": ["income_certificate", "pan_validation"]
-    }
-    return document_type in mock_vault.get(citizen_id, [])
-
-def vault_agent(state: Dict[str, Any]) -> Dict[str, Any]:
+async def vault_agent(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Document Vault Agent
     
@@ -24,13 +18,20 @@ def vault_agent(state: Dict[str, Any]) -> Dict[str, Any]:
     collected = []
     missing = []
     
-    for doc in required:
-        if check_document_vault(citizen_id, doc):
-            collected.append(doc)
-            state["progress_log"].append(f"Found {doc} in Document Vault.")
+    # Query Database for Citizen Documents
+    async with async_session() as db:
+        result = await db.execute(select(DocumentVault).where(DocumentVault.citizen_id == citizen_id))
+        citizen_docs = result.scalars().all()
+        
+    citizen_doc_types = [doc.document_type for doc in citizen_docs]
+    
+    for doc_req in required:
+        if doc_req in citizen_doc_types:
+            collected.append(doc_req)
+            state["progress_log"].append(f"Found {doc_req} in Document Vault.")
         else:
-            missing.append(doc)
-            state["progress_log"].append(f"Document missing: {doc}.")
+            missing.append(doc_req)
+            state["progress_log"].append(f"Document missing: {doc_req}.")
             
     state["collected_documents"] = collected
     state["missing_documents"] = missing

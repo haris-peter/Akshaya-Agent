@@ -26,9 +26,9 @@ async def submit_application(request: ApplyRequest):
     }
     
     # In a real environment we would dispatch this to a task queue. 
-    # For now, we invoke the LangGraph sync for demonstration.
+    # For now, we invoke the LangGraph async for demonstration.
     try:
-        final_state = app_workflow.invoke(initial_state)
+        final_state = await app_workflow.ainvoke(initial_state)
         # Assuming notification puts a status message
         
         return ApplyResponse(

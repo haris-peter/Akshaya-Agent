@@ -16,6 +16,13 @@ MOCK_SCHEME_RULES = {
         "conditional_documents": {
             "if_category_SC_ST": ["community_certificate"],
         }
+    },
+    "GHS2024": {
+        "documents": [
+            "Aadhar Card",
+            "income_certificate",
+            "medical_certificate"
+        ]
     }
 }
 

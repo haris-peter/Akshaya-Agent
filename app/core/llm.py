@@ -8,10 +8,10 @@ def get_llm():
     """
     return ChatOpenAI(
         model=settings.LLM_MODEL,
-        openai_api_key=settings.OPENROUTER_API_KEY,
+        api_key=settings.OPENROUTER_API_KEY,
         openai_api_base="https://openrouter.ai/api/v1",
         default_headers={
-            "HTTP-Referer": "http://localhost:8000", # Example referer
-            "X-Title": "SaarthiAI", # Example app name for OpenRouter
+            "HTTP-Referer": "http://localhost:8000",
+            "X-Title": "SaarthiAI",
         }
     )

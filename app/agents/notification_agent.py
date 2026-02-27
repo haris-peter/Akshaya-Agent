@@ -1,6 +1,6 @@
 from typing import Dict, Any
 
-def notification_agent(state: Dict[str, Any]) -> Dict[str, Any]:
+async def notification_agent(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Notification Agent
     
