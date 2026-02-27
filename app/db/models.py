@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Date, Boolean, ForeignKey, TIMESTAMP, func
+from sqlalchemy import Column, String, Integer, Date, Boolean, ForeignKey, TIMESTAMP, func, Text
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -49,3 +49,17 @@ class Application(Base):
 
     citizen = relationship("Citizen", back_populates="applications")
     scheme = relationship("Scheme", back_populates="applications")
+
+class DocumentUpload(Base):
+    __tablename__ = "document_upload"
+
+    upload_id = Column(String(50), primary_key=True)
+    citizen_id = Column(String(50), ForeignKey("citizen.citizen_id"))
+    s3_key = Column(String(255), nullable=False)
+    status = Column(String(20), default="pending")  # pending, completed, failed
+    ocr_text = Column(Text, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
+    updated_at = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
+
+    citizen = relationship("Citizen")
+
