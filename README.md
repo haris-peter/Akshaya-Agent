@@ -56,6 +56,13 @@ Seed the NeonDB instance with mock Scheme and Citizen data to test the LangGraph
 python seed_db.py
 ```
 
+### 4b. Policy and Admin Context Indexing (optional)
+To index policy documents and the **Admin Panel context** for RAG (e.g. so the agent can answer questions about document types, requirements, and admin workflows), add `.txt`, `.md`, or `.pdf` files to the `policies/` folder and run:
+```bash
+python ingest_policies.py
+```
+The file `policies/admin_panel_context.md` is included and describes the Admin Panel tabs, API endpoints, and how the Citizen Portal uses admin-configured data. It is indexed with `doc_type=ADMIN`.
+
 ### 5. Running the Application
 Start the Uvicorn web server in hot-reload mode:
 ```bash
