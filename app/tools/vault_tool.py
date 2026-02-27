@@ -1,175 +1,140 @@
-import base64
+import json
 import asyncio
-import uuid
+import httpx
 from typing import Dict, Any
 
-import httpx
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.db.session import async_session
-from app.db.models import DocumentUpload
+from app.db.models import Document, Citizen
 
 INTERNAL_API = "http://127.0.0.1:8000/api/v1/documents"
-OCR_POLL_INTERVAL = 3    # seconds between status checks
-OCR_POLL_TIMEOUT  = 120  # max seconds to wait for OCR webhook
+OCR_POLL_INTERVAL = 4
+OCR_POLL_TIMEOUT  = 120
 
 
-async def _tesseract_webhook_flow(file_bytes: bytes, requirement: Dict, citizen_aadhar: str) -> str:
+async def _poll_for_ocr(job_id: str) -> Dict:
     """
-    Webhook-based Tesseract OCR flow:
-    1. Creates a DocumentUpload record via POST /documents/upload-url
-    2. In production, client PUTs the file to S3; Tesseract Lambda processes it
-       and calls POST /documents/webhooks/ocr-complete
-    3. Here (since S3 isn't configured yet), we simulate completion by writing
-       the OCR result directly to the DB, then poll the status endpoint.
-    Returns: OCR text string
+    Polls GET /documents/status/{job_id} until status is 'completed' or 'failed'.
+    Returns the ocr_summary dict if completed, else an error dict.
     """
-    filename = f"{requirement['doc_type']}_{uuid.uuid4().hex[:6]}.jpg"
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(
-            f"{INTERNAL_API}/upload-url",
-            json={"citizen_id": citizen_aadhar, "filename": filename}
-        )
-        if resp.status_code != 200:
-            return f"[OCR Error] Failed to create upload record: {resp.text[:80]}"
-        upload_data = resp.json()
-        upload_id = upload_data["upload_id"]
-
-    # --- STUB: Simulate Tesseract OCR callback ---
-    # When the actual Tesseract Lambda is connected, remove this block.
-    # The Lambda will PUT the file to S3 → process → call /webhooks/ocr-complete itself.
-    stub_ocr_text = (
-        f"[Tesseract Stub] OCR text extracted for '{requirement['name']}'. "
-        f"File: {filename}. "
-        f"Replace stub by configuring TESSERACT_LAMBDA_URL and S3_BUCKET_NAME in .env."
-    )
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        await client.post(
-            f"{INTERNAL_API}/webhooks/ocr-complete",
-            json={"upload_id": upload_id, "status": "completed", "ocr_text": stub_ocr_text}
-        )
-    # --- END STUB ---
-
-    # Poll status endpoint until OCR completes (or timeout)
     elapsed = 0
     async with httpx.AsyncClient(timeout=10.0) as client:
         while elapsed < OCR_POLL_TIMEOUT:
-            poll = await client.get(f"{INTERNAL_API}/{upload_id}/status")
-            if poll.status_code == 200:
-                data = poll.json()
+            resp = await client.get(f"{INTERNAL_API}/status/{job_id}")
+            if resp.status_code == 200:
+                data = resp.json()
                 if data["status"] == "completed":
-                    return data.get("ocr_text") or "[OCR completed but no text returned]"
+                    return data.get("ocr_summary") or {}
                 if data["status"] == "failed":
-                    return f"[OCR Failed] Tesseract could not process '{requirement['name']}'."
+                    return {"error": f"OCR failed for job {job_id}"}
             await asyncio.sleep(OCR_POLL_INTERVAL)
             elapsed += OCR_POLL_INTERVAL
-
-    return f"[OCR Timeout] Tesseract did not respond within {OCR_POLL_TIMEOUT}s for '{requirement['name']}'."
-
-
-async def _analyze_with_llm_vision(file_bytes: bytes, requirement: Dict) -> str:
-    """
-    LLM Vision mode: sends the image to Gemini via OpenRouter.
-    Used for blueprints, medical scans, or any image requiring semantic understanding.
-    """
-    import json
-    import os
-
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    image_b64 = base64.b64encode(file_bytes).decode("utf-8")
-
-    prompt = f"""
-    You are analyzing a government document for scheme verification.
-    Document Type: {requirement['doc_type']}
-    Requirement: {requirement['name']}
-    Description: {requirement.get('description', '')}
-
-    Analyze this image carefully. Respond ONLY with a JSON:
-    {{
-        "document_type": "{requirement['name']}",
-        "key_findings": ["list of key observations"],
-        "measurements": {{}},
-        "summary": "one paragraph summary of document content and relevance"
-    }}
-    """
-
-    payload = {
-        "model": "google/gemini-2.0-flash-exp:free",
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}
-            ]
-        }]
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json=payload
-            )
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            try:
-                parsed = json.loads(content)
-                return parsed.get("summary", content)
-            except Exception:
-                return content
-    except Exception as e:
-        return f"[Vision LLM Error] {str(e)[:100]}"
+    return {"error": f"OCR timed out after {OCR_POLL_TIMEOUT}s for job {job_id}"}
 
 
 async def vault_tool(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Vault Tool
 
-    Processes each requirement using its configured analysis mode:
-      - ocr_mode="tesseract"  → webhook-based OCR flow (via DocumentUpload + polling)
-      - ocr_mode="llm_vision" → Gemini Vision LLM for blueprints/images
+    For each requirement:
+    1. Checks if a completed Document already exists for this citizen + requirement.
+       → If yes: reuses the stored ocr_summary (shows 'already exists').
+    2. If no completed document: uploads the file via POST /documents/upload
+       which calls the real Tesseract Lambda and stores the job_id.
+    3. Polls GET /documents/status/{job_id} until the OCR webhook fires.
+    4. Collects all OCR summaries as vault_summaries for downstream RAG.
 
-    Outputs:
-      - vault_summaries: {requirement_name: "text summary"}
-      - collected_documents: list of processed requirement names
-      - missing_documents: list of unsubmitted requirement names
+    State in:  aadhar_number, requirements, uploaded_files
+    State out: vault_summaries {req_name: rag_json}, collected_documents, missing_documents
     """
-    citizen_aadhar = state.get("aadhar_number", "unknown")
+    aadhar = state.get("aadhar_number", "")
     requirements = state.get("requirements", [])
-    uploaded_files = state.get("uploaded_files", {})
+    uploaded_files: Dict[str, bytes] = state.get("uploaded_files", {})
+
     vault_summaries = {}
     collected = []
     missing = []
 
-    print(f"Vault Tool: Processing {len(requirements)} requirement(s) for Aadhar {citizen_aadhar}...")
+    async with async_session() as db:
+        citizen_result = await db.execute(
+            select(Citizen).where(Citizen.aadhar_number == aadhar)
+        )
+        citizen = citizen_result.scalars().first()
+
+    if not citizen:
+        state["vault_summaries"] = {}
+        state["progress_log"].append("Vault: Citizen not found.")
+        return state
 
     for req in requirements:
+        req_id   = req["id"]
         req_name = req["name"]
-        ocr_mode = req.get("ocr_mode", "tesseract")
 
-        state["progress_log"].append(f"Vault: Processing '{req_name}' via {ocr_mode}...")
+        state["progress_log"].append(f"Vault: Checking '{req_name}'...")
+
+        async with async_session() as db:
+            existing_result = await db.execute(
+                select(Document).where(
+                    Document.citizen_id == citizen.id,
+                    Document.requirement_id == req_id,
+                    Document.status == "completed"
+                )
+            )
+            existing_doc = existing_result.scalars().first()
+
+        if existing_doc and existing_doc.ocr_summary:
+            vault_summaries[req_name] = json.loads(existing_doc.ocr_summary)
+            collected.append(req_name)
+            state["progress_log"].append(
+                f"Vault: '{req_name}' already processed ✔  (reusing existing document)"
+            )
+            continue
 
         file_bytes = uploaded_files.get(req_name)
+        if not file_bytes:
+            missing.append(req_name)
+            vault_summaries[req_name] = {"error": "NOT PROVIDED"}
+            state["progress_log"].append(f"Vault: '{req_name}' not uploaded — skipped.")
+            continue
 
-        if file_bytes:
-            if ocr_mode == "llm_vision":
-                summary = await _analyze_with_llm_vision(file_bytes, req)
-            else:
-                summary = await _tesseract_webhook_flow(file_bytes, req, citizen_aadhar)
+        state["progress_log"].append(f"Vault: Uploading '{req_name}' to Tesseract Lambda...")
 
-            vault_summaries[req_name] = summary
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            upload_resp = await client.post(
+                f"{INTERNAL_API}/upload",
+                data={
+                    "citizen_aadhar": aadhar,
+                    "requirement_id": str(req_id)
+                },
+                files={"file": (f"{req_name}.pdf", file_bytes, "application/pdf")}
+            )
+
+        if upload_resp.status_code != 200:
+            missing.append(req_name)
+            vault_summaries[req_name] = {"error": f"Upload failed: {upload_resp.text[:120]}"}
+            state["progress_log"].append(f"Vault: Upload failed for '{req_name}'.")
+            continue
+
+        upload_data = upload_resp.json()
+
+        if upload_data.get("already_exists"):
+            job_id = upload_data["job_id"]
+        else:
+            job_id = upload_data.get("job_id")
+
+        state["progress_log"].append(f"Vault: '{req_name}' uploaded — job_id={job_id}. Waiting for OCR...")
+
+        rag_json = await _poll_for_ocr(job_id)
+        vault_summaries[req_name] = rag_json
+
+        if "error" not in rag_json:
             collected.append(req_name)
-            state["progress_log"].append(f"Vault: '{req_name}' analyzed.")
+            state["progress_log"].append(f"Vault: '{req_name}' OCR complete.")
         else:
             missing.append(req_name)
-            vault_summaries[req_name] = "NOT PROVIDED"
-            state["progress_log"].append(f"Vault: '{req_name}' not uploaded — skipped.")
+            state["progress_log"].append(f"Vault: '{req_name}' OCR error — {rag_json['error']}")
 
     state["vault_summaries"] = vault_summaries
     state["collected_documents"] = collected
     state["missing_documents"] = missing
-
     return state

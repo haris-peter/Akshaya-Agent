@@ -3,9 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import json
 
-from app.api.schemas import SubmitRequest, SubmitResponse, RequirementIn
+from app.api.schemas import SubmitRequest, SubmitResponse, RequirementIn, DocumentTypeIn
 from app.db.session import get_session
-from app.db.models import Citizen, Employee, Requirement, StatusTracking
+from app.db.models import Citizen, Employee, Requirement, StatusTracking, DocumentType
 from app.tools.vault_tool import vault_tool
 from app.tools.explanation_tool import explanation_tool
 
@@ -119,16 +119,75 @@ async def update_tracking_status(tracking_id: int, payload: dict, db: AsyncSessi
     return {"tracking_id": tracking_id, "status": record.status}
 
 
+@router.get("/document-types")
+async def list_document_types(db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(DocumentType))
+    types = result.scalars().all()
+    return [
+        {
+            "id": dt.id, "name": dt.name, "slug": dt.slug,
+            "description": dt.description
+        }
+        for dt in types
+    ]
+
+
+@router.post("/document-types")
+async def create_document_type(payload: DocumentTypeIn, db: AsyncSession = Depends(get_session)):
+    dt = DocumentType(**payload.model_dump())
+    db.add(dt)
+    await db.commit()
+    await db.refresh(dt)
+    return {"id": dt.id, "name": dt.name, "slug": dt.slug}
+
+
+@router.delete("/document-types/{dt_id}")
+async def delete_document_type(dt_id: int, db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(DocumentType).where(DocumentType.id == dt_id))
+    dt = result.scalars().first()
+    if not dt:
+        raise HTTPException(status_code=404, detail="Document type not found.")
+    await db.delete(dt)
+    await db.commit()
+    return {"deleted": dt_id}
+
+
 @router.get("/requirements")
 async def list_requirements(db: AsyncSession = Depends(get_session)):
     result = await db.execute(select(Requirement))
     reqs = result.scalars().all()
-    return [{"id": r.id, "name": r.name, "doc_type": r.doc_type, "ocr_mode": r.ocr_mode,
-             "description": r.description, "is_mandatory": r.is_mandatory} for r in reqs]
+    out = []
+    for r in reqs:
+        await db.refresh(r, ["doc_type"])
+        out.append({
+            "id": r.id,
+            "name": r.name,
+            "ocr_mode": r.ocr_mode,
+            "is_mandatory": r.is_mandatory,
+            "document_type_id": r.document_type_id,
+            "document_type_name": r.doc_type.name if r.doc_type else None,
+            "document_type_slug": r.doc_type.slug if r.doc_type else None,
+        })
+    return out
+
+
+@router.get("/requirements/by-type/{document_type_id}")
+async def list_requirements_by_type(document_type_id: int, db: AsyncSession = Depends(get_session)):
+    result = await db.execute(
+        select(Requirement).where(Requirement.document_type_id == document_type_id)
+    )
+    reqs = result.scalars().all()
+    return [
+        {"id": r.id, "name": r.name, "ocr_mode": r.ocr_mode, "is_mandatory": r.is_mandatory}
+        for r in reqs
+    ]
 
 
 @router.post("/requirements")
 async def add_requirement(payload: RequirementIn, db: AsyncSession = Depends(get_session)):
+    dt_result = await db.execute(select(DocumentType).where(DocumentType.id == payload.document_type_id))
+    if not dt_result.scalars().first():
+        raise HTTPException(status_code=404, detail="Document type not found.")
     req = Requirement(**payload.model_dump())
     db.add(req)
     await db.commit()

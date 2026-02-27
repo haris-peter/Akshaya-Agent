@@ -31,8 +31,12 @@ class OCRWebhookResponse(BaseModel):
     compliance_report: Optional[Dict[str, Any]] = None
 
 class RequirementIn(BaseModel):
+    document_type_id: int
     name: str
-    doc_type: str
     ocr_mode: str = "tesseract"
-    description: Optional[str] = None
     is_mandatory: bool = True
+
+class DocumentTypeIn(BaseModel):
+    name: str
+    slug: str
+    description: Optional[str] = None

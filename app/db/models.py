@@ -38,17 +38,50 @@ class Employee(Base):
     tracking_records = relationship("StatusTracking", back_populates="employee")
 
 
+class DocumentType(Base):
+    __tablename__ = "document_type"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), unique=True, nullable=False)
+    slug = Column(String(50), unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
+    updated_at = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
+
+    requirements = relationship("Requirement", back_populates="doc_type", cascade="all, delete-orphan")
+
+
 class Requirement(Base):
     __tablename__ = "requirement"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    document_type_id = Column(Integer, ForeignKey("document_type.id"), nullable=False)
     name = Column(String(100), nullable=False)
-    doc_type = Column(String(50), nullable=False)
     ocr_mode = Column(String(20), default="tesseract")
-    description = Column(Text, nullable=True)
     is_mandatory = Column(Boolean, default=True)
     created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
     updated_at = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
+
+    doc_type = relationship("DocumentType", back_populates="requirements")
+    documents = relationship("Document", back_populates="requirement")
+
+
+class Document(Base):
+    __tablename__ = "document"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    citizen_id = Column(Integer, ForeignKey("citizen.id"), nullable=False)
+    requirement_id = Column(Integer, ForeignKey("requirement.id"), nullable=False)
+    document_name = Column(String(100), nullable=False)
+    job_id = Column(String(100), unique=True, nullable=True)
+    file_url = Column(String(500), nullable=True)
+    status = Column(String(20), default="processing")
+    ocr_summary = Column(Text, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
+    updated_at = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
+
+    citizen = relationship("Citizen")
+    requirement = relationship("Requirement", back_populates="documents")
 
 
 class StatusTracking(Base):
