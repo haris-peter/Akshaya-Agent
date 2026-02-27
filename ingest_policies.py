@@ -8,7 +8,7 @@ from sqlalchemy import text
 from app.db.session import engine, init_db
 from app.db.models import PolicyDocument
 
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 POLICIES_DIR = Path(__file__).parent / "policies"
@@ -59,7 +59,8 @@ async def ingest_file(embeddings_model, text_splitter, path: Path):
         return 0
 
     raw_stem = path.stem.upper()
-    scheme_id = raw_stem.split("_")[0] if "_" in raw_stem else None
+    # Use first part of stem as doc_type (e.g. ADMIN_PANEL_CONTEXT -> ADMIN, GHS_xyz -> GHS)
+    doc_type_value = raw_stem.split("_")[0] if "_" in raw_stem else (raw_stem if raw_stem else None)
 
     chunks = text_splitter.split_text(content)
     # Sanitize each chunk individually
@@ -73,7 +74,7 @@ async def ingest_file(embeddings_model, text_splitter, path: Path):
         async with AsyncSession(engine) as session:
             for idx, chunk in enumerate(batch):
                 doc = PolicyDocument(
-                    scheme_id=scheme_id,
+                    doc_type=doc_type_value,
                     content=chunk,
                     embedding=vectors[idx],
                     metadata_json=json.dumps({"source": path.name, "chunk": i + idx})
@@ -84,7 +85,7 @@ async def ingest_file(embeddings_model, text_splitter, path: Path):
         total += len(batch)
         print(f"    Committed batch {i // BATCH_SIZE + 1}: {total}/{len(chunks)} chunks")
 
-    print(f"  Done: {total} chunks from {path.name} (scheme_id={scheme_id})")
+    print(f"  Done: {total} chunks from {path.name} (doc_type={doc_type_value})")
     return total
 
 async def main():
