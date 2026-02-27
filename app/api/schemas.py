@@ -1,12 +1,12 @@
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
-class ApplyRequest(BaseModel):
-    citizen_id: str
-    scheme_id: str
-    
-class ApplyResponse(BaseModel):
-    application_id: str
+class SubmitRequest(BaseModel):
+    aadhar_number: str
+    document_request_type: str
+
+class SubmitResponse(BaseModel):
+    tracking_id: Optional[int] = None
     status: str
     message: str
 
@@ -28,3 +28,11 @@ class OCRWebhookRequest(BaseModel):
 class OCRWebhookResponse(BaseModel):
     status: str
     message: str
+    compliance_report: Optional[Dict[str, Any]] = None
+
+class RequirementIn(BaseModel):
+    name: str
+    doc_type: str
+    ocr_mode: str = "tesseract"
+    description: Optional[str] = None
+    is_mandatory: bool = True

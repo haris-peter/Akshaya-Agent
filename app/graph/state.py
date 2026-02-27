@@ -1,14 +1,13 @@
-from typing import TypedDict, List, Dict, Any
+from typing import TypedDict, List, Dict, Any, Optional
 
-class ApplicationState(TypedDict):
-    """
-    Represents the state of a government scheme application as it flows through the system.
-    """
-    citizen_id: str
-    scheme_id: str
-    scheme_rules: Dict[str, Any]
-    required_documents: List[str]
-    collected_documents: List[str]
-    missing_documents: List[str]
-    eligibility_result: Dict[str, Any]
-    progress_log: List[Dict[str, Any]]
+class DocumentState(TypedDict):
+    aadhar_number: str
+    document_request_type: str
+    citizen: Dict[str, Any]
+    tracking_id: Optional[int]
+    requirements: List[Dict[str, Any]]
+    uploaded_files: Dict[str, bytes]
+    vault_summaries: Dict[str, str]
+    compliance_report: Dict[str, Any]
+    status: str
+    progress_log: List[str]

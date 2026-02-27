@@ -32,7 +32,8 @@ async def requirement_agent(state: Dict[str, Any]) -> Dict[str, Any]:
     state["scheme_rules"] = {
         "income_limit": scheme.income_limit,
         "district_required": scheme.district_required,
-        "raw_db_name": scheme.name
+        "raw_db_name": scheme.name,
+        "rules_json": scheme.rules_json or {}
     }
     
     # Store citizen info for eligibility engine

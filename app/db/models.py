@@ -1,66 +1,80 @@
-from sqlalchemy import Column, String, Integer, Date, Boolean, ForeignKey, TIMESTAMP, func, Text
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, TIMESTAMP, Text, func
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 from .database import Base
 
+
 class Citizen(Base):
     __tablename__ = "citizen"
 
-    citizen_id = Column(String(50), primary_key=True)
-    aadhar_number = Column(String(12), unique=True, nullable=False)
-    name = Column(String(100), nullable=False)
-    dob = Column(Date, nullable=False)
-    district = Column(String(50), nullable=False)
-    annual_income = Column(Integer, nullable=False)
-
-    documents = relationship("DocumentVault", back_populates="citizen")
-    applications = relationship("Application", back_populates="citizen")
-
-class Scheme(Base):
-    __tablename__ = "scheme"
-
-    scheme_id = Column(String(50), primary_key=True)
-    name = Column(String(200), nullable=False)
-    income_limit = Column(Integer, nullable=True)
-    district_required = Column(Boolean, default=False)
-
-    applications = relationship("Application", back_populates="scheme")
-
-class DocumentVault(Base):
-    __tablename__ = "document_vault"
-
     id = Column(Integer, primary_key=True, autoincrement=True)
-    citizen_id = Column(String(50), ForeignKey("citizen.citizen_id"))
-    document_type = Column(String(100), nullable=False)
-    issued_date = Column(Date, nullable=False)
-    valid_until = Column(Date, nullable=False)
-    document_hash = Column(String(256), nullable=False)
-
-    citizen = relationship("Citizen", back_populates="documents")
-
-class Application(Base):
-    __tablename__ = "application"
-
-    application_id = Column(String(50), primary_key=True)
-    citizen_id = Column(String(50), ForeignKey("citizen.citizen_id"))
-    scheme_id = Column(String(50), ForeignKey("scheme.scheme_id"))
-    status = Column(String(50), nullable=False)
+    aadhar_number = Column(String(12), unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    phone = Column(String(15), nullable=True)
+    email = Column(String(100), nullable=True)
+    address = Column(Text, nullable=True)
+    district = Column(String(50), nullable=True)
     created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
     updated_at = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
 
-    citizen = relationship("Citizen", back_populates="applications")
-    scheme = relationship("Scheme", back_populates="applications")
+    tracking_records = relationship("StatusTracking", back_populates="citizen")
+
+
+class Employee(Base):
+    __tablename__ = "employee"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    employee_code = Column(String(50), unique=True, nullable=True)
+    name = Column(String(100), nullable=False)
+    phone = Column(String(15), nullable=True)
+    email = Column(String(100), unique=True, nullable=True)
+    address = Column(Text, nullable=True)
+    department = Column(String(100), nullable=True)
+    position = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
+    updated_at = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
+
+    tracking_records = relationship("StatusTracking", back_populates="employee")
+
+
+class Requirement(Base):
+    __tablename__ = "requirement"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    doc_type = Column(String(50), nullable=False)
+    ocr_mode = Column(String(20), default="tesseract")
+    description = Column(Text, nullable=True)
+    is_mandatory = Column(Boolean, default=True)
+    created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
+    updated_at = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
+
+
+class StatusTracking(Base):
+    __tablename__ = "status_tracking"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    citizen_id = Column(Integer, ForeignKey("citizen.id"), nullable=False)
+    employee_id = Column(Integer, ForeignKey("employee.id"), nullable=True)
+    document_request_type = Column(String(100), nullable=False)
+    status = Column(String(50), nullable=False, default="pending")
+    remarks = Column(Text, nullable=True)
+    vault_summary = Column(Text, nullable=True)
+    compliance_notes = Column(Text, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
+    updated_at = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
+
+    citizen = relationship("Citizen", back_populates="tracking_records")
+    employee = relationship("Employee", back_populates="tracking_records")
+
 
 class PolicyDocument(Base):
-    """
-    RAG Vector Store Model for Policy Snippets
-    """
     __tablename__ = "policy_document"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    scheme_id = Column(String(50), ForeignKey("scheme.scheme_id"), nullable=True)
+    doc_type = Column(String(50), nullable=True)
     content = Column(Text, nullable=False)
-    # Using a 384-dimensional vector assuming all-MiniLM-L6-v2 embedding model
     embedding = Column(Vector(384))
     metadata_json = Column(String(500), nullable=True)
 
