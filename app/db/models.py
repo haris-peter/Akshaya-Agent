@@ -82,7 +82,7 @@ class DocumentUpload(Base):
     __tablename__ = "document_upload"
 
     upload_id = Column(String(50), primary_key=True)
-    citizen_id = Column(String(50), ForeignKey("citizen.citizen_id"))
+    citizen_id = Column(Integer, ForeignKey("citizen.id"), nullable=True)
     s3_key = Column(String(255), nullable=False)
     status = Column(String(20), default="pending")  # pending, completed, failed
     ocr_text = Column(Text, nullable=True)
