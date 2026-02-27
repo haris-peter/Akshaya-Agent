@@ -63,3 +63,17 @@ class PolicyDocument(Base):
     # Using a 384-dimensional vector assuming all-MiniLM-L6-v2 embedding model
     embedding = Column(Vector(384))
     metadata_json = Column(String(500), nullable=True)
+
+class DocumentUpload(Base):
+    __tablename__ = "document_upload"
+
+    upload_id = Column(String(50), primary_key=True)
+    citizen_id = Column(String(50), ForeignKey("citizen.citizen_id"))
+    s3_key = Column(String(255), nullable=False)
+    status = Column(String(20), default="pending")  # pending, completed, failed
+    ocr_text = Column(Text, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
+    updated_at = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
+
+    citizen = relationship("Citizen")
+
