@@ -40,3 +40,16 @@ class DocumentTypeIn(BaseModel):
     name: str
     slug: str
     description: Optional[str] = None
+
+class BlueprintVerificationResult(BaseModel):
+    is_blueprint_valid: bool
+    dimensions_found: Optional[str] = None
+    structural_components_found: list[str] = []
+    compliance_issues: list[str] = []
+    overall_conclusion: str
+    confidence_score: float
+
+class BlueprintAnalysisRequest(BaseModel):
+    document_id: int
+    prompt: Optional[str] = "Analyze this blueprint and verify if it matches standard structural requirements."
+
