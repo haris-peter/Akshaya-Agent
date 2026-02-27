@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.api.routes import router as citizen_router
 from app.api.documents import router as document_router
+from app.api.vision import router as vision_router
 from app.departments.routes import router as department_router
 from app.db.session import init_db
 
@@ -32,6 +33,7 @@ app.add_middleware(
 # Connect the citizen-facing routes
 app.include_router(citizen_router, prefix="/api/v1")
 app.include_router(document_router, prefix="/api/v1/documents", tags=["documents"])
+app.include_router(vision_router, prefix="/api/v1/vision", tags=["vision Agent"])
 
 # Connect the simulated department service routes
 app.include_router(department_router, prefix="/api/v1/departments")
