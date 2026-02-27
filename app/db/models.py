@@ -1,5 +1,6 @@
-from sqlalchemy import Column, String, Integer, Date, Boolean, ForeignKey, TIMESTAMP, func
+from sqlalchemy import Column, String, Integer, Date, Boolean, ForeignKey, TIMESTAMP, func, Text
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 from .database import Base
 
 class Citizen(Base):
@@ -49,3 +50,16 @@ class Application(Base):
 
     citizen = relationship("Citizen", back_populates="applications")
     scheme = relationship("Scheme", back_populates="applications")
+
+class PolicyDocument(Base):
+    """
+    RAG Vector Store Model for Policy Snippets
+    """
+    __tablename__ = "policy_document"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    scheme_id = Column(String(50), ForeignKey("scheme.scheme_id"), nullable=True)
+    content = Column(Text, nullable=False)
+    # Using a 384-dimensional vector assuming all-MiniLM-L6-v2 embedding model
+    embedding = Column(Vector(384))
+    metadata_json = Column(String(500), nullable=True)

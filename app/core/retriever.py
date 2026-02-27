@@ -1,0 +1,46 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from langchain_huggingface import HuggingFaceEmbeddings
+from app.db.session import async_session
+
+_embeddings_model = None
+
+def get_embeddings_model():
+    global _embeddings_model
+    if _embeddings_model is None:
+        _embeddings_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    return _embeddings_model
+
+async def get_relevant_policy_context(query: str, scheme_id: str = None, top_k: int = 3) -> str:
+    """
+    Performs vector similarity search against the PolicyDocument table.
+    Returns the concatenated top-k most relevant policy text chunks.
+    """
+    model = get_embeddings_model()
+    query_vector = model.embed_query(query)
+    
+    async with async_session() as db:
+        if scheme_id:
+            sql = text("""
+                SELECT content
+                FROM policy_document
+                WHERE scheme_id = :scheme_id
+                ORDER BY embedding <-> CAST(:qv AS vector)
+                LIMIT :k
+            """)
+            result = await db.execute(sql, {"scheme_id": scheme_id, "qv": str(query_vector), "k": top_k})
+        else:
+            sql = text("""
+                SELECT content
+                FROM policy_document
+                ORDER BY embedding <-> CAST(:qv AS vector)
+                LIMIT :k
+            """)
+            result = await db.execute(sql, {"qv": str(query_vector), "k": top_k})
+        
+        rows = result.fetchall()
+    
+    if not rows:
+        return ""
+    
+    return "\n\n".join(row[0] for row in rows)

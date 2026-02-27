@@ -1,0 +1,31 @@
+Global Health Scheme (GHS2024) - Official Policy Guidelines
+===========================================================
+
+1. Objective
+The Global Health Scheme (GHS2024) aims to provide comprehensive health coverage
+to economically underprivileged citizens across all districts.
+
+2. Eligibility Criteria
+- Citizens must have an annual household income strictly less than INR 5,00,000.
+- Applicants must be Indian residents with a valid Aadhar Card.
+- There is no district restriction; all districts are covered.
+
+3. Required Documentation
+The following documents are mandatory for a successful application:
+  a) Aadhar Card - Required for photo identity and address proof.
+  b) Income Certificate - Issued by the local Tahsildar or Revenue Officer,
+     certifying the household annual income. Must be from the current financial year.
+  c) Medical Certificate - Issued by a registered government hospital doctor,
+     describing the applicant's current health condition and any pre-existing conditions.
+
+4. Income Certificate Exemptions
+Senior citizens above the age of 60 are exempt from submitting the income certificate.
+
+5. Rejection Clauses
+  - Applications missing the Aadhar Card will be rejected as identity cannot be verified.
+  - Applications missing the medical certificate will be summarily rejected to prevent fraud.
+  - Applications with a declared household income exceeding INR 5,00,000 will be rejected.
+
+6. Appeal Process
+Rejected applicants may file an appeal at the nearest District Collectorate within 30 days
+of receiving the rejection notice.
