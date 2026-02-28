@@ -76,12 +76,17 @@ async def upload_document(
     file_bytes = await file.read()
     filename = file.filename or f"upload_{requirement_id}.pdf"
 
+    print(f"DEBUG upload: file_size={len(file_bytes)}, filename={filename}, content_type={file.content_type}")
+
+    if len(file_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
             TESSERACT_LAMBDA_URL,
             headers={
                 "x-filename": filename,
-                "Content-Type": file.content_type or "application/pdf"
+                "Content-Type": "application/pdf"
             },
             content=file_bytes
         )
