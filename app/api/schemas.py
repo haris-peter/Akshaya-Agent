@@ -9,6 +9,7 @@ class SubmitResponse(BaseModel):
     tracking_id: Optional[int] = None
     status: str
     message: str
+    compliance_report: Optional[Dict[str, Any]] = None
 
 class DocumentUploadRequest(BaseModel):
     citizen_id: str

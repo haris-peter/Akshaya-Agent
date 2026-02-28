@@ -74,6 +74,7 @@ class Document(Base):
     requirement_id = Column(Integer, ForeignKey("requirement.id"), nullable=False)
     document_name = Column(String(100), nullable=False)
     job_id = Column(String(100), unique=True, nullable=True)
+    s3_key = Column(String(500), nullable=True)
     file_url = Column(String(500), nullable=True)
     status = Column(String(20), default="processing")
     ocr_summary = Column(Text, nullable=True)

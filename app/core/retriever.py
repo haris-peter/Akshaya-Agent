@@ -11,6 +11,9 @@ def get_embeddings_model():
         _embeddings_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     return _embeddings_model
 
+MAX_QUERY_LENGTH = 2000
+
+
 async def get_relevant_policy_context(query: str, scheme_id: str = None, top_k: int = 3) -> str:
     """
     Performs vector similarity search against the PolicyDocument table.
@@ -45,3 +48,19 @@ async def get_relevant_policy_context(query: str, scheme_id: str = None, top_k: 
         return ""
     
     return "\n\n".join(row[0] for row in rows)
+
+
+async def get_regulations_for_document_content(
+    document_content: str,
+    requirement_name: str,
+    scheme_id: str = None,
+    top_k: int = 5
+) -> str:
+    """
+    Cross-checks document content against regulations by querying the vector DB
+    with the actual document text. Returns relevant laws/regulations for RAG compliance.
+    """
+    if not document_content or not document_content.strip():
+        return ""
+    query = (requirement_name + " " + document_content.strip())[:MAX_QUERY_LENGTH]
+    return await get_relevant_policy_context(query=query, scheme_id=scheme_id, top_k=top_k)

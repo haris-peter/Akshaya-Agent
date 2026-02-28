@@ -95,12 +95,14 @@ async def upload_document(
     ocr_response = response.json()
     job_id = ocr_response.get("job_id")
     s3_url = ocr_response.get("s3_url")
+    s3_key = ocr_response.get("s3_key")
 
     doc = Document(
         citizen_id=citizen.id,
         requirement_id=requirement_id,
         document_name=requirement.name,
         job_id=job_id,
+        s3_key=s3_key,
         file_url=s3_url,
         status="processing"
     )
@@ -122,31 +124,49 @@ class OCRWebhookPayload(BaseModel):
     job_id: str
     status: str
     ocr_text: Optional[str] = None
+    text: Optional[str] = None
+    s3_key: Optional[str] = None
+    file: Optional[str] = None
     error_message: Optional[str] = None
+
+
+async def _resolve_document(db: AsyncSession, payload: OCRWebhookPayload):
+    """Find Document by job_id first, then by s3_key if present (for webhooks that send hash as job_id)."""
+    result = await db.execute(
+        select(Document).where(Document.job_id == payload.job_id)
+    )
+    doc = result.scalars().first()
+    if doc:
+        return doc
+    if payload.s3_key:
+        result = await db.execute(
+            select(Document).where(Document.s3_key == payload.s3_key)
+        )
+        doc = result.scalars().first()
+    return doc
 
 
 @router.post("/webhook")
 async def ocr_webhook(payload: OCRWebhookPayload, db: AsyncSession = Depends(get_session)):
     """
-    Tesseract Lambda calls this endpoint after OCR completes.
-    - Matches job_id to the Document record.
-    - Stores raw OCR text.
-    - Generates a structured RAG-ready JSON summary and stores it in ocr_summary.
+    OCR service calls this after processing. Cross-checks job_id (or s3_key) with stored
+    Document to know which requirement's transcript to save.
+    Accepts both ocr_text and text; normalizes status 'success' -> 'completed'.
     """
-    result = await db.execute(
-        select(Document).where(Document.job_id == payload.job_id)
-    )
-    doc = result.scalars().first()
-
+    doc = await _resolve_document(db, payload)
     if not doc:
         raise HTTPException(
             status_code=404,
             detail=f"No document found for job_id '{payload.job_id}'."
         )
 
-    doc.status = payload.status
+    status = payload.status.strip().lower()
+    if status == "success":
+        status = "completed"
+    doc.status = status
 
-    if payload.status == "completed" and payload.ocr_text:
+    ocr_text = payload.ocr_text or payload.text or ""
+    if status == "completed" and ocr_text:
         req_result = await db.execute(
             select(Requirement).where(Requirement.id == doc.requirement_id)
         )
@@ -159,11 +179,11 @@ async def ocr_webhook(payload: OCRWebhookPayload, db: AsyncSession = Depends(get
         rag_json = _build_rag_json(
             requirement_name=doc.document_name,
             doc_type_slug=doc_type_slug,
-            ocr_text=payload.ocr_text
+            ocr_text=ocr_text
         )
         doc.ocr_summary = json.dumps(rag_json)
 
-    elif payload.status == "failed":
+    elif status == "failed":
         doc.ocr_summary = json.dumps({"error": payload.error_message or "OCR failed."})
 
     await db.commit()
@@ -172,7 +192,7 @@ async def ocr_webhook(payload: OCRWebhookPayload, db: AsyncSession = Depends(get
         "status": "received",
         "job_id": payload.job_id,
         "document_id": doc.id,
-        "message": f"Document '{doc.document_name}' updated to '{payload.status}'."
+        "message": f"Document '{doc.document_name}' updated to '{status}'."
     }
 
 

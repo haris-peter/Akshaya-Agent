@@ -5,8 +5,9 @@ uvicorn[standard]==0.27.1
 # AI Orchestration
 langchain==0.1.13
 langgraph==0.0.31
-langchain-openai==0.1.1
+langchain-openai>=0.2.0
 langchain-core==0.1.38
+instructor>=1.0.0
 
 # Database & Vectors
 SQLAlchemy[asyncio]==2.0.29
