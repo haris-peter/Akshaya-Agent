@@ -120,7 +120,13 @@ p, label, .stMarkdown { color: #d0d0e0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-API_BASE = "http://127.0.0.1:8000"
+API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8000")
+BACKEND_UNREACHABLE_MSG = (
+    "**Backend API is not reachable.** Start the FastAPI server in a separate terminal:\n\n"
+    "```bash\npython -m uvicorn main:app --port 8000 --reload\n```\n\n"
+    "Then refresh this page."
+)
+
 
 def render_node(title, icon, status, description=None, content=None):
     cls = f"node-card {status}"
@@ -142,45 +148,69 @@ def connector():
     st.markdown('<div class="node-connector"></div>', unsafe_allow_html=True)
 
 async def get_requirements_api():
-    async with httpx.AsyncClient() as c:
-        r = await c.get(f"{API_BASE}/api/v1/requirements", timeout=5.0)
-        return r.json() if r.status_code == 200 else []
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(f"{API_BASE}/api/v1/requirements", timeout=5.0)
+            return r.json() if r.status_code == 200 else []
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
+        return None
 
 async def get_document_types_api():
-    async with httpx.AsyncClient() as c:
-        r = await c.get(f"{API_BASE}/api/v1/document-types", timeout=5.0)
-        return r.json() if r.status_code == 200 else []
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(f"{API_BASE}/api/v1/document-types", timeout=5.0)
+            return r.json() if r.status_code == 200 else []
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
+        return None
 
 async def get_requirements_by_type_api(doc_type_id: int):
-    async with httpx.AsyncClient() as c:
-        r = await c.get(f"{API_BASE}/api/v1/requirements/by-type/{doc_type_id}", timeout=5.0)
-        return r.json() if r.status_code == 200 else []
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(f"{API_BASE}/api/v1/requirements/by-type/{doc_type_id}", timeout=5.0)
+            return r.json() if r.status_code == 200 else []
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
+        return None
 
 async def add_document_type_api(payload):
-    async with httpx.AsyncClient() as c:
-        r = await c.post(f"{API_BASE}/api/v1/document-types", json=payload, timeout=10.0)
-        return r.status_code in (200, 201)
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.post(f"{API_BASE}/api/v1/document-types", json=payload, timeout=10.0)
+            return r.status_code in (200, 201)
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
+        return False
 
 async def delete_document_type_api(dt_id: int):
-    async with httpx.AsyncClient() as c:
-        r = await c.delete(f"{API_BASE}/api/v1/document-types/{dt_id}", timeout=10.0)
-        return r.status_code == 200
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.delete(f"{API_BASE}/api/v1/document-types/{dt_id}", timeout=10.0)
+            return r.status_code == 200
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
+        return False
 
 async def submit_document_request(aadhar_number, document_request_type):
-    async with httpx.AsyncClient(timeout=60.0) as c:
-        r = await c.post(f"{API_BASE}/api/v1/submit",
-            json={"aadhar_number": aadhar_number, "document_request_type": document_request_type})
-        return r.json() if r.status_code == 200 else {"error": r.text, "status": "error"}
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as c:
+            r = await c.post(f"{API_BASE}/api/v1/submit",
+                json={"aadhar_number": aadhar_number, "document_request_type": document_request_type})
+            return r.json() if r.status_code == 200 else {"error": r.text, "status": "error"}
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
+        return {"error": BACKEND_UNREACHABLE_MSG, "status": "error"}
 
 async def add_requirement_api(payload):
-    async with httpx.AsyncClient() as c:
-        r = await c.post(f"{API_BASE}/api/v1/requirements", json=payload, timeout=10.0)
-        return r.status_code in (200, 201)
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.post(f"{API_BASE}/api/v1/requirements", json=payload, timeout=10.0)
+            return r.status_code in (200, 201)
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
+        return False
 
 async def delete_requirement_api(req_id):
-    async with httpx.AsyncClient() as c:
-        r = await c.delete(f"{API_BASE}/api/v1/requirements/{req_id}", timeout=10.0)
-        return r.status_code == 200
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.delete(f"{API_BASE}/api/v1/requirements/{req_id}", timeout=10.0)
+            return r.status_code == 200
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
+        return False
 
 def run_async(coro):
     try:
@@ -201,6 +231,9 @@ def citizen_page():
         st.markdown("<p style='text-align:center;color:#9090bb;font-size:15px;margin-bottom:32px;'>Government Document Processing Portal</p>", unsafe_allow_html=True)
 
         doc_types = run_async(get_document_types_api())
+        if doc_types is None:
+            st.error(BACKEND_UNREACHABLE_MSG)
+            return
         if not doc_types:
             st.warning("No document types available. Please ask the admin to configure them.")
             return
@@ -222,6 +255,9 @@ def citizen_page():
                 st.session_state["doc_type_id"] = selected_dt["id"]
                 st.session_state["doc_type_label"] = selected_dt_name
                 requirements = run_async(get_requirements_by_type_api(selected_dt["id"]))
+                if requirements is None:
+                    st.error(BACKEND_UNREACHABLE_MSG)
+                    return
                 st.session_state["requirements"] = requirements
                 st.session_state["stage"] = "upload"
 
@@ -321,7 +357,9 @@ def admin_page():
     # ─── TAB 1: Document Types with nested Requirements ───────────────────────
     with tab1:
         doc_types = run_async(get_document_types_api())
-        if not doc_types:
+        if doc_types is None:
+            st.error(BACKEND_UNREACHABLE_MSG)
+        elif not doc_types:
             st.info("No document types configured yet. Add one in the '➕ Add Document Type' tab.")
         else:
             for dt in doc_types:
@@ -330,7 +368,9 @@ def admin_page():
                         st.markdown(f"<p style='color:#aaa;font-size:13px;'>{dt['description']}</p>", unsafe_allow_html=True)
 
                     reqs = run_async(get_requirements_by_type_api(dt["id"]))
-                    if reqs:
+                    if reqs is None:
+                        st.markdown("<p style='color:#ff9999;font-size:13px;'>Could not load requirements (backend unreachable).</p>", unsafe_allow_html=True)
+                    elif reqs:
                         for req in reqs:
                             mandatory = "🔴 Mandatory" if req.get("is_mandatory") else "🟡 Optional"
                             ocr_badge = "🤖 LLM Vision" if req.get("ocr_mode") == "llm_vision" else "📄 Tesseract"
@@ -360,7 +400,9 @@ def admin_page():
     # ─── TAB 2: Add Requirement to an existing Document Type ──────────────────
     with tab2:
         doc_types = run_async(get_document_types_api())
-        if not doc_types:
+        if doc_types is None:
+            st.error(BACKEND_UNREACHABLE_MSG)
+        elif not doc_types:
             st.warning("Add at least one document type first.")
         else:
             type_options = {dt["name"]: dt["id"] for dt in doc_types}

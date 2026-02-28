@@ -1,35 +1,36 @@
 from typing import Dict, Any
 from app.core.llm import get_llm
-from app.core.retriever import get_relevant_policy_context
+from app.core.retriever import get_relevant_policy_context, get_regulations_for_document_content
+from app.tools.vault_tool import _get_requirement_summary_string
 from langchain_core.prompts import PromptTemplate
 import json
 
-async def explanation_tool(state: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Explanation & Compliance Assessment Tool
 
-    Inputs: vault_summaries, requirements, eligibility_result (from state)
-    Outputs: compliance_report — per-requirement RAG assessment + explanation
-
-    Two responsibilities:
-    1. If application is rejected: generate a polite rejection explanation backed by RAG policy.
-    2. For each requirement in vault_summaries: assess compliance against regulations via RAG.
+async def cross_check_vault_with_regulations(
+    vault_summaries: Dict[str, Any],
+    llm_requirement_summaries: Dict[str, str],
+    requirements: list,
+    scheme_id: str = None,
+) -> Dict[str, Dict[str, Any]]:
     """
-    result = state.get("eligibility_result", {})
-    reason = result.get("reason", "")
-    scheme_id = state.get("scheme_id")
-    vault_summaries = state.get("vault_summaries", {})
-    requirements = state.get("requirements", [])
+    Cross-checks vault output against regulations/laws using the vector DB.
+    For each requirement, uses the document content to retrieve relevant policy chunks,
+    then assesses compliance. Returns the compliance report (output of the RAG cross-check).
+    """
+    llm = get_llm()
     compliance_report = {}
 
-    print(f"Explanation Tool: Running RAG compliance assessment...")
-
-    llm = get_llm()
-
-    # 1. Per-requirement compliance assessment via RAG
     for req in requirements:
         req_name = req["name"]
-        summary = vault_summaries.get(req_name, "NOT PROVIDED")
+        summary_raw = llm_requirement_summaries.get(req_name) or vault_summaries.get(req_name)
+        if isinstance(summary_raw, str):
+            summary = summary_raw
+        elif summary_raw:
+            summary = _get_requirement_summary_string(summary_raw, req_name)
+        else:
+            summary = "NOT PROVIDED"
+        if not summary or (isinstance(summary, str) and summary.strip() == ""):
+            summary = "NOT PROVIDED"
 
         if summary == "NOT PROVIDED":
             compliance_report[req_name] = {
@@ -39,9 +40,11 @@ async def explanation_tool(state: Dict[str, Any]) -> Dict[str, Any]:
             }
             continue
 
-        policy_context = await get_relevant_policy_context(
-            query=f"{req_name} requirements regulations",
-            scheme_id=scheme_id
+        policy_context = await get_regulations_for_document_content(
+            document_content=summary,
+            requirement_name=req_name,
+            scheme_id=scheme_id,
+            top_k=5,
         )
 
         template = """
@@ -83,10 +86,32 @@ async def explanation_tool(state: Dict[str, Any]) -> Dict[str, Any]:
 
         compliance_report[req_name] = parsed
 
+    return compliance_report
+
+
+async def explanation_tool(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Uses vault response to cross-check each requirement against regulations/laws
+    via the vector DB (RAG), then outputs the compliance report.
+    """
+    result = state.get("eligibility_result", {})
+    reason = result.get("reason", "")
+    scheme_id = state.get("scheme_id")
+    vault_summaries = state.get("vault_summaries", {})
+    requirements = state.get("requirements", [])
+    llm_summaries = state.get("llm_requirement_summaries", {})
+
+    print("Explanation Tool: Cross-checking vault response with regulations (vector DB)...")
+    compliance_report = await cross_check_vault_with_regulations(
+        vault_summaries=vault_summaries,
+        llm_requirement_summaries=llm_summaries,
+        requirements=requirements,
+        scheme_id=scheme_id,
+    )
     state["compliance_report"] = compliance_report
 
-    # 2. If rejected: generate a polite explanation with policy context
     if result.get("status") == "rejected":
+        llm = get_llm()
         policy_context = await get_relevant_policy_context(query=reason, scheme_id=scheme_id)
         template = """
         You are Saarthi, a polite government AI assistant.

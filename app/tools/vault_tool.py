@@ -9,7 +9,43 @@ from app.db.models import Document, Citizen
 
 INTERNAL_API = "http://127.0.0.1:8000/api/v1/documents"
 OCR_POLL_INTERVAL = 4
-OCR_POLL_TIMEOUT  = 120
+OCR_POLL_TIMEOUT = 120
+
+
+def _blueprint_result_to_rag_json(requirement_name: str, doc_type_slug: str, result: Any) -> Dict:
+    """Convert Bedrock BlueprintVerificationResult to same shape as _build_rag_json for RAG."""
+    parts = [
+        result.overall_conclusion or "",
+        f"Dimensions: {result.dimensions_found}" if result.dimensions_found else "",
+        "Components: " + ", ".join(result.structural_components_found) if result.structural_components_found else "",
+        "Issues: " + ", ".join(result.compliance_issues) if result.compliance_issues else "",
+    ]
+    raw_text = "\n".join(p for p in parts if p).strip()
+    lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
+    return {
+        requirement_name: {
+            "doc_type": doc_type_slug,
+            "raw_text": raw_text,
+            "summary_lines": lines[:30],
+            "char_count": len(raw_text),
+        }
+    }
+
+
+def _get_requirement_summary_string(vault_entry: Dict, req_name: str) -> str:
+    """Extract a single summary string for LLM from vault_summaries[req_name]."""
+    if isinstance(vault_entry, str):
+        return vault_entry
+    if vault_entry.get("error"):
+        return f"Error: {vault_entry.get('error', 'Unknown')}"
+    inner = vault_entry.get(req_name) if isinstance(vault_entry.get(req_name), dict) else vault_entry
+    if not inner:
+        inner = vault_entry
+    raw = inner.get("raw_text") if isinstance(inner, dict) else ""
+    if raw:
+        return raw
+    lines = inner.get("summary_lines", []) if isinstance(inner, dict) else []
+    return "\n".join(lines) if lines else str(inner)
 
 
 async def _poll_for_ocr(job_id: str) -> Dict:
@@ -97,6 +133,29 @@ async def vault_tool(state: Dict[str, Any]) -> Dict[str, Any]:
             state["progress_log"].append(f"Vault: '{req_name}' not uploaded — skipped.")
             continue
 
+        ocr_mode = req.get("ocr_mode", "tesseract")
+        dt = req.get("doc_type")
+        doc_type_slug = (getattr(dt, "slug", None) if dt is not None else None) or (dt.get("slug") if isinstance(dt, dict) else None) or ""
+
+        if ocr_mode == "llm_vision":
+            state["progress_log"].append(f"Vault: Extracting '{req_name}' via Bedrock vision...")
+            try:
+                from app.core.bedrock import analyze_blueprint_pdf, analyze_blueprint_image
+                prompt = "Extract key information: dimensions, structural components, and any compliance issues."
+                if file_bytes[:4] == b"%PDF":
+                    blueprint_result = analyze_blueprint_pdf(file_bytes, prompt)
+                else:
+                    blueprint_result = analyze_blueprint_image(file_bytes, prompt)
+                rag_json = _blueprint_result_to_rag_json(req_name, doc_type_slug or "blueprint", blueprint_result)
+                vault_summaries[req_name] = rag_json
+                collected.append(req_name)
+                state["progress_log"].append(f"Vault: '{req_name}' Bedrock extraction complete.")
+            except Exception as e:
+                vault_summaries[req_name] = {"error": str(e)}
+                missing.append(req_name)
+                state["progress_log"].append(f"Vault: '{req_name}' Bedrock error — {e}")
+            continue
+
         state["progress_log"].append(f"Vault: Uploading '{req_name}' to Tesseract Lambda...")
 
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -137,4 +196,8 @@ async def vault_tool(state: Dict[str, Any]) -> Dict[str, Any]:
     state["vault_summaries"] = vault_summaries
     state["collected_documents"] = collected
     state["missing_documents"] = missing
+    state["llm_requirement_summaries"] = {
+        req_name: _get_requirement_summary_string(vault_summaries.get(req_name, {}), req_name)
+        for req_name in vault_summaries
+    }
     return state
